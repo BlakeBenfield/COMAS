@@ -3,6 +3,11 @@
 #include <Wire.h>
 #include <SPI.h>
 #include "cs147_display.h"
+#include "cs147_common.h"
+#include "comas_config.h"
+#include "comas_pms5003.h"
+#include "comas_cloud.h"
+ 
 
 constexpr uint8_t CS147_OLED_ADDRESS = 0x3C;
 
