@@ -2,12 +2,11 @@
 #include <Arduino.h>
 #include "comas_config.h"
 
-// -----------------------------------------------------------------------------
-// PMS5003 particle sensor over UART2.
-// The sensor pushes a 32-byte frame roughly once per second:
-//   0x42 0x4D | frame length (2B) | 13 x uint16 data words | checksum (2B)
-// We read PM1.0 / PM2.5 / PM10 (atmospheric-environment values, words 4-6).
-// -----------------------------------------------------------------------------
+// PMS5003 particle sensor, sits on UART2.
+// it just spits out a 32 byte frame about once a second without being asked:
+// 0x42 0x4D, 2 byte length, 13 uint16 data words, 2 byte checksum.
+// we only pull out PM1.0/PM2.5/PM10 (the "atmospheric" set, words 4-6 --
+// the datasheet has two sets and the other one is for factory calibration)
 
 struct PmsReading {
   uint16_t pm1_0 = 0;
@@ -17,18 +16,17 @@ struct PmsReading {
 };
 
 inline void comasInitPms() {
-  // UART2, 9600 8N1, remapped pins.
-  Serial1.begin(9600, SERIAL_8N1, Pins::pms_rx, Pins::pms_tx);
+  Serial1.begin(9600, SERIAL_8N1, Pins::pms_rx, Pins::pms_tx);  // 9600 8N1 per datasheet
 }
 
-// Drains the UART buffer and returns the most recent complete valid frame.
+// drain whatever's in the uart buffer and return the newest good frame
 inline PmsReading comasReadPms() {
   PmsReading result;
   uint8_t frame[32];
 
   while (Serial1.available() >= 32) {
     if (Serial1.peek() != 0x42) {
-      Serial1.read();  // resync: discard until start byte
+      Serial1.read();  // not at a frame start, throw bytes away until we are
       continue;
     }
     Serial1.readBytes(frame, 32);
@@ -36,7 +34,7 @@ inline PmsReading comasReadPms() {
       continue;
     }
 
-    // Checksum: sum of bytes 0..29 must equal the last two bytes.
+    // checksum = sum of bytes 0..29, stored big-endian in the last 2 bytes
     uint16_t sum = 0;
     for (int i = 0; i < 30; i++) {
       sum += frame[i];
@@ -50,7 +48,7 @@ inline PmsReading comasReadPms() {
     result.pm2_5 = (uint16_t)(frame[12] << 8) | frame[13];
     result.pm10  = (uint16_t)(frame[14] << 8) | frame[15];
     result.valid = true;
-    // Keep looping: if more frames are buffered, prefer the newest one.
+    // don't break here -- if there's a backlog we want the latest frame not the oldest
   }
   return result;
 }

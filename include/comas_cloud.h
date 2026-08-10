@@ -5,12 +5,10 @@
 #include <HTTPClient.h>
 #include "comas_config.h"
 
-// -----------------------------------------------------------------------------
-// Wi-Fi + cloud client (Architecture 2: node -> Wi-Fi AP -> cloud server).
-// Works with both http:// (local server) and https:// (Render/hosted server).
-// JSON is small and fixed-shape, so we build it with snprintf instead of
-// pulling in a JSON library.
-// -----------------------------------------------------------------------------
+// wifi + cloud stuff (architecture 2: node -> wifi AP -> cloud server)
+// handles both http (local flask server) and https (Render).
+// the json we send is tiny and always the same shape so snprintf is fine,
+// didn't feel like pulling in ArduinoJson just for this
 
 inline bool comasConnectWifi(uint32_t timeoutMs = 15000) {
   WiFi.mode(WIFI_STA);
@@ -34,20 +32,18 @@ inline bool comasWifiOk() {
   return WiFi.status() == WL_CONNECTED;
 }
 
-// Begins an HTTP or HTTPS request depending on the server URL scheme.
-// Returns false if begin() failed.
+// picks http vs https based on the url
 inline bool comasHttpBegin(HTTPClient& http, WiFiClientSecure& secureClient,
                            const String& url) {
   if (url.startsWith("https://")) {
-    // Course project: skip certificate verification for simplicity.
+    // not bothering with cert verification, it's a class project
     secureClient.setInsecure();
     return http.begin(secureClient, url);
   }
   return http.begin(url);
 }
 
-// POST one telemetry sample. alarmFlag: 0 = normal, else bitmask
-// (1 = CO, 2 = methane, 4 = particles).
+// upload one sample. alarmFlag is a bitmask: 1=CO, 2=methane, 4=particles (0 = all good)
 inline bool comasPostTelemetry(int coRaw, int methaneRaw, int pm25,
                                int pm10, int alarmFlag) {
   if (!comasWifiOk()) return false;
@@ -76,9 +72,9 @@ inline bool comasPostTelemetry(int coRaw, int methaneRaw, int pm25,
   return true;
 }
 
-// Ask the server whether ANY node currently has an active alarm.
-// Returns the alarming node id, or 0 if all clear / request failed.
-// Response body is just the node id as plain text ("0", "1", "2").
+// asks the server if any node has an alarm going. returns that node's id,
+// or 0 if everything's fine (or the request failed, same difference here).
+// server just sends back the id as plain text ("0"/"1"/"2")
 inline int comasPollRemoteAlert() {
   if (!comasWifiOk()) return 0;
 
