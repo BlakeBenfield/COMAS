@@ -60,5 +60,6 @@ inline PmsReading comasReadPms() {
             data[15];
     }
 
+    Serial2.flush();
     return result;
 }

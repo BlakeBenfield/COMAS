@@ -10,13 +10,12 @@
 // the json we send is tiny and always the same shape so snprintf is fine,
 // didn't feel like pulling in ArduinoJson just for this
 
-inline bool comasConnectWifi(uint32_t timeoutMs = 15000) {
+inline bool comasConnectWifi(uint32_t timeoutMs = 150) {
   WiFi.mode(WIFI_STA);
   WiFi.begin(COMAS_WIFI_SSID, COMAS_WIFI_PASS);
   const uint32_t start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
     delay(250);
-    Serial.print(".");
   }
   Serial.println();
   if (WiFi.status() == WL_CONNECTED) {
@@ -26,7 +25,6 @@ inline bool comasConnectWifi(uint32_t timeoutMs = 15000) {
     Serial.println(WiFi.gatewayIP());
     return true;
   }
-  Serial.println("Wi-Fi connection FAILED (will keep running locally).");
   return false;
 }
 

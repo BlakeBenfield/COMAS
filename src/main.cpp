@@ -1,5 +1,5 @@
-// Header files. Do NOT comment these!
 #include <Arduino.h>
+#include <array>
 #include <Wire.h>
 #include <SPI.h>
 #include "cs147_display.h"
@@ -9,6 +9,8 @@
 #include <WiFiClientSecure.h>
 #include "comas_cloud.h"
 #include "comas_pms5003.h"
+
+#define getLoadingIcon() loading_sprites[(millis() / 1000) % 4]
 
 namespace Pins {
     constexpr uint8_t buzzer = 33;
@@ -20,13 +22,14 @@ namespace Pins {
 }
 
 // Sensor calibration values.
-// Adjust these manually after the sensors have warmed up.
 constexpr float METHANE_RES_REF = 3.0f;
 constexpr float CO_RES_REF = 9.0f;
 
 constexpr float ADC_VOLTAGE = 3.3f;
 constexpr float SENSOR_VCC = 5.0f;
 constexpr uint8_t ADC_BITS = 12;
+
+char loading_sprites[] = {'|', '/', '-', '\\'};
 
 // Sensors
 MQUnifiedsensor methane_sensor(
@@ -45,9 +48,22 @@ MQUnifiedsensor co_sensor(
     "MQ-7"
 );
 
+//Loop globals
+unsigned long last_print_ms = 0;
+unsigned long last_beep = 0;
+unsigned long last_communication = 0;
+bool beeping = false;
+int remote_alert_node = 0;
+unsigned long last_sample_ms = 0;
+float methane_ppm;
+float co_ppm;
+struct PmsReading pms;
+int alert_status;
+
+
+
 float readMethanePPM() {
-    float voltage =
-        (analogReadMilliVolts(Pins::methane_sensor) / 1000.0f) * 2.0f;
+    float voltage = (analogReadMilliVolts(Pins::methane_sensor) / 1000.0f) * 2.0f;
 
     methane_sensor.externalADCUpdate(voltage);
 
@@ -55,27 +71,27 @@ float readMethanePPM() {
 }
 
 float readCOPPM() {
-    float voltage =
-        (analogReadMilliVolts(Pins::co_sensor) / 1000.0f) * 2.0f;
+    float voltage = (analogReadMilliVolts(Pins::co_sensor) / 1000.0f) * 2.0f;
 
     co_sensor.externalADCUpdate(voltage);
 
     return co_sensor.readSensor();
 }
 
+int getAlertStatus(float methane_ppm, float co_ppm, struct PmsReading pms) {
+    remote_alert_node = comasPollRemoteAlert();
+    int result = 0;
+
+    if (methane_ppm >= METHANE_PPM_THRESHOLD) result += 2;
+    if (co_ppm >= CO_PPM_THRESHOLD) result += 1;
+    if (pms.pm2_5 >= PM25_UGM3_THRESHOLD) result += 4;
+    if (remote_alert_node) result += 8;
+    
+    return result;
+}
+
+
 void setup() {
-    /*
-    INIT
-    I2C
-    UART
-    BUZZER PIN
-    DISPLAY
-    ADC2 CH2 CH 0
-
-    BEEP
-    Show init text
-    */
-
     Serial.begin(115200);
 
     //I2C to display
@@ -86,12 +102,17 @@ void setup() {
         "Group: 18",
         "CS147"
     );
+    delay(2000);
 
-    // Buzzer INIT
+    // Buzzer & LED INIT
     pinMode(Pins::buzzer, OUTPUT);
+    pinMode(Pins::led, OUTPUT);
+
     digitalWrite(Pins::buzzer, HIGH);
+    digitalWrite(Pins::led, HIGH);
     delay(1000);
     digitalWrite(Pins::buzzer, LOW);
+    digitalWrite(Pins::led, LOW);
 
     // ADC INIT
     analogReadResolution(12);
@@ -117,64 +138,139 @@ void setup() {
     comasInitPms(Pins::rx_pin, Pins::tx_pin);
 
     //wait for particle sensor to wakeup
-    delay(SENSOR_WARMUP_MS);
+    unsigned long wakeup_ms = millis() + SENSOR_WARMUP_MS;
+    while (millis() < wakeup_ms) {
+        cs147DisplayLines(
+            "Booting COMAS...",
+            "",
+            "Sensors warming up.",
+            "Done in " + String( (int)(wakeup_ms - millis())/1000) + "s."
+        );
+    }
 
-    Serial1.flush();  // Remove garbage data
+    int wifi_attempts = 0;
+    
+    cs147DisplayLines(
+                "Booting COMAS...",
+                "",
+                "Connecting to network\n" + String(COMAS_WIFI_SSID)
+            );
 
-    comasConnectWifi();
+    while (wifi_attempts <= WIFI_MAX_ATTEMPTS * 100) {
+        wifi_attempts++;
+        comasConnectWifi();
 
-    if (!comasWifiOk())
-        Serial.println("ERROR!");
-    else
-        Serial.println("WiFi connected");
+        if (!comasWifiOk()) {
+            if (wifi_attempts % 100 == 0)
+                Serial.println("ERROR!");
+            cs147DisplayLines(
+                "Booting COMAS...",
+                "",
+                "Connecting to network\n" + String(COMAS_WIFI_SSID),
+                "FAILURE!\nRetrying (" + String(wifi_attempts / 100) + "/" + String(WIFI_MAX_ATTEMPTS) + ") " + getLoadingIcon()
+            );
+        } else {
+            Serial.println("WiFi connected");
+            cs147DisplayLines(
+                "Booting COMAS...",
+                "",
+                "Connecting to network\n" + String(COMAS_WIFI_SSID),
+                "Success!"
+            );
+            
+            break;
+        }
+    }
+    
+    if (!comasWifiOk()) {
+        cs147DisplayLines(
+                "Booting COMAS...",
+                "",
+                "Unable to connect.",
+                "Continuing locally."
+            );
+            delay(2000);
+    }
 }
 
 void loop() {
-    /*
-    every 15 seconds
-    Check methane
-    Check CO
-    Check particle
-    Update display
+    unsigned long now = millis();
+    
+    if (now - last_sample_ms >= SAMPLE_INTERVAL_MS) {
+        last_sample_ms = now;
 
-    Check thresholds
-    IF too high
-      Beep Buzzer
-      flash LED
-      append error data to cloud
+        methane_ppm = readMethanePPM();
+        co_ppm = readCOPPM();
+        PmsReading pms = comasReadPms();
+        alert_status = getAlertStatus(methane_ppm, co_ppm, pms); 
+    }   
 
-    send data to cloud
-    */
+    // Print values
+    if (now - last_print_ms >= PRINT_INTERVAL) {
+        last_print_ms = now;
 
-    float methane_ppm = readMethanePPM();
-    float co_ppm = readCOPPM();
-    struct PmsReading pms = comasReadPms();
+        Serial.print("Methane: ");
+        Serial.print(methane_ppm);
 
-    Serial.print("Methane: ");
-    Serial.print(methane_ppm);
-    Serial.print(" ppm | CO: ");
-    Serial.print(co_ppm);
-    Serial.println(" ppm");
+        Serial.print(" ppm | CO: ");
+        Serial.print(co_ppm);
+        Serial.println(" ppm");
 
-    Serial.print(" PM1.0=");
-    Serial.print(pms.pm1_0);
+        Serial.print(" PM1.0=");
+        Serial.print(pms.pm1_0);
 
-    Serial.print(" PM2.5=");
-    Serial.print(pms.pm2_5);
+        Serial.print(" PM2.5=");
+        Serial.print(pms.pm2_5);
 
-    Serial.print(" PM10=");
-    Serial.println(pms.pm10);
+        Serial.print(" PM10=");
+        Serial.println(pms.pm10);
 
-    Serial.println(comasPollRemoteAlert());
+        String alert_text = "";
+        if (alert_status & (1 << 0)) {
+            alert_text = "CO DETECTED!";
+        } else if (alert_status & (1 << 1)) {
+            alert_text = "METHANE DETECTED!";
+        } else if (alert_status & (1 << 2)) {
+            alert_text = "High Particles!";
+        } else if (alert_status & (1 << 3) && remote_alert_node != COMAS_NODE_ID) {
+            alert_text = "UNSAFE LEVELS AT NODE " + String(remote_alert_node);
+        }
 
-    //TODO alarm, display
-    comasPostTelemetry(
-        co_ppm,
-        methane_ppm,
-        pms.pm2_5,
-        pms.pm1_0,
-        0
-    );
+        cs147DisplayLines(
+            "Status: " + String(alert_text.length() > 0 ? "DANGER" : (comasWifiOk() ? "Operational" : "Local Only")),
+            alert_text,
+            "\nMethane: " + String(methane_ppm) + " ppm\nCO: " + String(co_ppm) + "ppm",
+            "Particulates(ug/m^3)\nLarge: " + String(pms.pm10) + "\nFine: " + String(pms.pm2_5) + "\nUltrafine: " + String(pms.pm1_0)
+        );
+    }
 
-    delay(SAMPLE_INTERVAL_MS);
+    if (now - last_beep >= BEEP_INTERVAL) {
+        last_beep = now;
+
+        if (alert_status & ~(1 << 3)) {
+            beeping = !beeping;
+            if (beeping) {
+                    digitalWrite(Pins::buzzer, HIGH);
+                    digitalWrite(Pins::led, HIGH);
+            } else {
+                    digitalWrite(Pins::buzzer, LOW);
+                    digitalWrite(Pins::led, LOW);
+            }
+        } else {
+            digitalWrite(Pins::buzzer, LOW);
+            digitalWrite(Pins::led, LOW);
+        }
+    }
+
+    if (now - last_communication >= TELEMETRY_INTERVAL) {
+        last_communication = now;
+
+        comasPostTelemetry(
+            co_ppm,
+            methane_ppm,
+            pms.pm2_5,
+            pms.pm10,
+            alert_status & ~(1 << 3)
+        );
+    }
 }
