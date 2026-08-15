@@ -7,21 +7,22 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
-
-constexpr char WIFI_SSID[] = "iPhone";
-constexpr char WIFI_PASSWORD[] = "PassworD";
-
-constexpr char CLOUD_URL[] = "https://192.0.0.2:5000";
+#include "comas_cloud.h"
+#include "comas_pms5003.h"
 
 namespace Pins {
-constexpr uint8_t buzzer = 33;
-constexpr uint8_t methane_sensor = 35; // MQ-2
-constexpr uint8_t co_sensor = 32;      // MQ-7
+    constexpr uint8_t buzzer = 33;
+    constexpr uint8_t methane_sensor = 35;
+    constexpr uint8_t co_sensor = 32;
+    constexpr uint8_t led = 26;
+    constexpr uint8_t rx_pin = 16;
+    constexpr uint8_t tx_pin = 17;  //Unused, we dont send data to the sensor.
 }
 
 // Sensor calibration values.
-constexpr float METHANE_RES_REF = 10.0f;
-constexpr float CO_RES_REF = 10.0f;
+// Adjust these manually after the sensors have warmed up.
+constexpr float METHANE_RES_REF = 3.0f;
+constexpr float CO_RES_REF = 9.0f;
 
 constexpr float ADC_VOLTAGE = 3.3f;
 constexpr float SENSOR_VCC = 5.0f;
@@ -44,54 +45,23 @@ MQUnifiedsensor co_sensor(
     "MQ-7"
 );
 
-bool uploadData(float methane_ppm, float co_ppm) {
-    if (WiFi.status() != WL_CONNECTED) {
-        return false;
-    }
-
-    WiFiClientSecure client;
-
-    client.setInsecure();
-
-    HTTPClient http;
-
-    if (!http.begin(client, CLOUD_URL)) {
-        return false;
-    }
-
-    http.addHeader("Content-Type", "application/json");
-
-    String data =
-        "{\"methane_ppm\":" + String(methane_ppm, 2) +
-        ",\"co_ppm\":" + String(co_ppm, 2) + "}";
-
-    int response = http.POST(data);
-
-    Serial.print("Cloud response: ");
-    Serial.println(response);
-
-    http.end();
-
-    return response >= 200 && response < 300;
-}
-
-float readPPM(uint8_t pin) {
-    MQUnifiedsensor *sensor;
-
-    if (pin == Pins::methane_sensor) {
-        sensor = &methane_sensor;
-    } else {
-        sensor = &co_sensor;
-    }
-
+float readMethanePPM() {
     float voltage =
-        (analogReadMilliVolts(pin) / 1000.0f) * 2.0f;
+        (analogReadMilliVolts(Pins::methane_sensor) / 1000.0f) * 2.0f;
 
-    sensor->externalADCUpdate(voltage);
+    methane_sensor.externalADCUpdate(voltage);
 
-    return sensor->readSensor();
+    return methane_sensor.readSensor();
 }
 
+float readCOPPM() {
+    float voltage =
+        (analogReadMilliVolts(Pins::co_sensor) / 1000.0f) * 2.0f;
+
+    co_sensor.externalADCUpdate(voltage);
+
+    return co_sensor.readSensor();
+}
 
 void setup() {
     /*
@@ -132,34 +102,31 @@ void setup() {
     methane_sensor.setRL(1);
     methane_sensor.setR0(METHANE_RES_REF);
     methane_sensor.setRegressionMethod(1);
+    methane_sensor.setA(4309);
+    methane_sensor.setB(-2.625);
 
     // MQ-7 INIT
     co_sensor.init();
     co_sensor.setVCC(SENSOR_VCC);
-    co_sensor.setRL(1);
+    co_sensor.setRL(10);
     co_sensor.setR0(CO_RES_REF);
     co_sensor.setRegressionMethod(1);
     co_sensor.setA(99.042);
     co_sensor.setB(-1.518);
 
+    comasInitPms(Pins::rx_pin, Pins::tx_pin);
 
-    Serial1.begin(9600);  //UART to particle sensor
-
-    //wait 30s for part. sensor to wakeup
-    delay(30 * 1000);
+    //wait for particle sensor to wakeup
+    delay(SENSOR_WARMUP_MS);
 
     Serial1.flush();  // Remove garbage data
 
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    comasConnectWifi();
 
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-    }
-
-    Serial.println("WiFi connected");
-
-    
+    if (!comasWifiOk())
+        Serial.println("ERROR!");
+    else
+        Serial.println("WiFi connected");
 }
 
 void loop() {
@@ -179,8 +146,9 @@ void loop() {
     send data to cloud
     */
 
-    float methane_ppm = readPPM(Pins::methane_sensor);
-    float co_ppm = readPPM(Pins::co_sensor);
+    float methane_ppm = readMethanePPM();
+    float co_ppm = readCOPPM();
+    struct PmsReading pms = comasReadPms();
 
     Serial.print("Methane: ");
     Serial.print(methane_ppm);
@@ -188,5 +156,25 @@ void loop() {
     Serial.print(co_ppm);
     Serial.println(" ppm");
 
-    delay(15 * 1000);
+    Serial.print(" PM1.0=");
+    Serial.print(pms.pm1_0);
+
+    Serial.print(" PM2.5=");
+    Serial.print(pms.pm2_5);
+
+    Serial.print(" PM10=");
+    Serial.println(pms.pm10);
+
+    Serial.println(comasPollRemoteAlert());
+
+    //TODO alarm, display
+    comasPostTelemetry(
+        co_ppm,
+        methane_ppm,
+        pms.pm2_5,
+        pms.pm1_0,
+        0
+    );
+
+    delay(SAMPLE_INTERVAL_MS);
 }
