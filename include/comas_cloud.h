@@ -22,6 +22,8 @@ inline bool comasConnectWifi(uint32_t timeoutMs = 15000) {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("Wi-Fi connected, IP: ");
     Serial.println(WiFi.localIP());
+    Serial.print("Gateway: ");
+    Serial.println(WiFi.gatewayIP());
     return true;
   }
   Serial.println("Wi-Fi connection FAILED (will keep running locally).");
