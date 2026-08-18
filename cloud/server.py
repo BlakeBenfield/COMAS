@@ -265,25 +265,26 @@ DASHBOARD = """<!doctype html>
 <h1>COMAS &mdash; Carbon Monoxide &amp; Methane Alert System</h1>
 <div class="sub">Team 18 &middot; CS147 &middot; live node telemetry, alerts and anomaly flags</div>
 <div class="cards" id="cards"></div>
-<canvas id="gas" height="90"></canvas>
+<canvas id="co" height="90"></canvas>
+<canvas id="ch4" height="90"></canvas>
 <canvas id="pm" height="90"></canvas>
 <script>
-const gasChart = new Chart(document.getElementById('gas'), {
-  type:'line', data:{labels:[],datasets:[
-    {label:'Node 1 CO (raw)',data:[],borderColor:'#ff6b6b',tension:.3},
-    {label:'Node 1 CH4 (raw)',data:[],borderColor:'#e6b422',tension:.3},
-    {label:'Node 2 CO (raw)',data:[],borderColor:'#ff9e9e',borderDash:[6,4],tension:.3},
-    {label:'Node 2 CH4 (raw)',data:[],borderColor:'#f4d97a',borderDash:[6,4],tension:.3}]},
-  options:{animation:false,scales:{x:{ticks:{color:'#8fa0b8'}},y:{ticks:{color:'#8fa0b8'}}},
-    plugins:{legend:{labels:{color:'#e8ecf4'}},title:{display:true,text:'Gas sensors',color:'#e8ecf4'}}}
-});
-const pmChart = new Chart(document.getElementById('pm'), {
-  type:'line', data:{labels:[],datasets:[
-    {label:'Node 1 PM2.5',data:[],borderColor:'#5dd39e',tension:.3},
-    {label:'Node 2 PM2.5',data:[],borderColor:'#a8e6cf',borderDash:[6,4],tension:.3}]},
-  options:{animation:false,scales:{x:{ticks:{color:'#8fa0b8'}},y:{ticks:{color:'#8fa0b8'}}},
-    plugins:{legend:{labels:{color:'#e8ecf4'}},title:{display:true,text:'Particulates (ug/m3)',color:'#e8ecf4'}}}
-});
+function lineChart(id, title, sets){
+  return new Chart(document.getElementById(id), {
+    type:'line', data:{labels:[],datasets:sets},
+    options:{animation:false,scales:{x:{ticks:{color:'#8fa0b8'}},y:{ticks:{color:'#8fa0b8'}}},
+      plugins:{legend:{labels:{color:'#e8ecf4'}},title:{display:true,text:title,color:'#e8ecf4'}}}
+  });
+}
+const coChart = lineChart('co', 'Carbon monoxide (raw ADC)', [
+  {label:'Node 1 CO',data:[],borderColor:'#ff6b6b',tension:.3},
+  {label:'Node 2 CO',data:[],borderColor:'#ff9e9e',borderDash:[6,4],tension:.3}]);
+const ch4Chart = lineChart('ch4', 'Methane / combustible gas (raw ADC)', [
+  {label:'Node 1 CH4',data:[],borderColor:'#e6b422',tension:.3},
+  {label:'Node 2 CH4',data:[],borderColor:'#f4d97a',borderDash:[6,4],tension:.3}]);
+const pmChart = lineChart('pm', 'Particulates PM2.5 (ug/m3)', [
+  {label:'Node 1 PM2.5',data:[],borderColor:'#5dd39e',tension:.3},
+  {label:'Node 2 PM2.5',data:[],borderColor:'#a8e6cf',borderDash:[6,4],tension:.3}]);
 
 function fmtTs(ts){const d=new Date(ts*1000);return d.toLocaleTimeString();}
 
@@ -300,12 +301,14 @@ async function refresh(){
   const h1 = await (await fetch('/api/history?node=1&limit=100')).json();
   const h2 = await (await fetch('/api/history?node=2&limit=100')).json();
   const labels = (h1.length>=h2.length?h1:h2).map(r=>fmtTs(r.ts));
-  gasChart.data.labels = labels;
-  gasChart.data.datasets[0].data = h1.map(r=>r.co_raw);
-  gasChart.data.datasets[1].data = h1.map(r=>r.methane_raw);
-  gasChart.data.datasets[2].data = h2.map(r=>r.co_raw);
-  gasChart.data.datasets[3].data = h2.map(r=>r.methane_raw);
-  gasChart.update();
+  coChart.data.labels = labels;
+  coChart.data.datasets[0].data = h1.map(r=>r.co_raw);
+  coChart.data.datasets[1].data = h2.map(r=>r.co_raw);
+  coChart.update();
+  ch4Chart.data.labels = labels;
+  ch4Chart.data.datasets[0].data = h1.map(r=>r.methane_raw);
+  ch4Chart.data.datasets[1].data = h2.map(r=>r.methane_raw);
+  ch4Chart.update();
   pmChart.data.labels = labels;
   pmChart.data.datasets[0].data = h1.map(r=>r.pm25);
   pmChart.data.datasets[1].data = h2.map(r=>r.pm25);
