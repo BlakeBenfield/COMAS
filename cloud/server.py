@@ -69,6 +69,9 @@ def init_db():
     conn.close()
 
 
+init_db()
+
+
 # ----------------------------------------------------------------------------
 # Anomaly detection: rolling z-score against the last ANOMALY_WINDOW samples
 # ----------------------------------------------------------------------------
@@ -324,6 +327,5 @@ def dashboard():
 
 
 if __name__ == "__main__":
-    init_db()
     import os
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

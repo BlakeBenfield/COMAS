@@ -54,6 +54,7 @@ unsigned long last_beep = 0;
 unsigned long last_communication = 0;
 bool beeping = false;
 int remote_alert_node = 0;
+unsigned long last_alert_poll_ms = 0;
 unsigned long last_sample_ms = 0;
 float methane_ppm;
 float co_ppm;
@@ -79,7 +80,6 @@ float readCOPPM() {
 }
 
 int getAlertStatus(float methane_ppm, float co_ppm, struct PmsReading pms) {
-    remote_alert_node = comasPollRemoteAlert();
     int result = 0;
 
     if (methane_ppm >= METHANE_PPM_THRESHOLD) result += 2;
@@ -156,18 +156,17 @@ void setup() {
                 "Connecting to network\n" + String(COMAS_WIFI_SSID)
             );
 
-    while (wifi_attempts <= WIFI_MAX_ATTEMPTS * 100) {
+    while (wifi_attempts < WIFI_MAX_ATTEMPTS) {
         wifi_attempts++;
         comasConnectWifi();
 
         if (!comasWifiOk()) {
-            if (wifi_attempts % 100 == 0)
-                Serial.println("ERROR!");
+            Serial.println("ERROR!");
             cs147DisplayLines(
                 "Booting COMAS...",
                 "",
                 "Connecting to network\n" + String(COMAS_WIFI_SSID),
-                "FAILURE!\nRetrying (" + String(wifi_attempts / 100) + "/" + String(WIFI_MAX_ATTEMPTS) + ") " + getLoadingIcon()
+                "FAILURE!\nRetrying (" + String(wifi_attempts) + "/" + String(WIFI_MAX_ATTEMPTS) + ") " + getLoadingIcon()
             );
         } else {
             Serial.println("WiFi connected");
@@ -196,12 +195,18 @@ void setup() {
 void loop() {
     unsigned long now = millis();
     
+    if (now - last_alert_poll_ms >= ALERT_POLL_INTERVAL_MS) {
+        last_alert_poll_ms = now;
+
+        remote_alert_node = comasPollRemoteAlert();
+    }
+
     if (now - last_sample_ms >= SAMPLE_INTERVAL_MS) {
         last_sample_ms = now;
 
         methane_ppm = readMethanePPM();
         co_ppm = readCOPPM();
-        PmsReading pms = comasReadPms();
+        pms = comasReadPms();
         alert_status = getAlertStatus(methane_ppm, co_ppm, pms); 
     }   
 
@@ -247,7 +252,7 @@ void loop() {
     if (now - last_beep >= BEEP_INTERVAL) {
         last_beep = now;
 
-        if (alert_status & ~(1 << 3)) {
+        if (alert_status) {
             beeping = !beeping;
             if (beeping) {
                     digitalWrite(Pins::buzzer, HIGH);

@@ -10,7 +10,7 @@
 // the json we send is tiny and always the same shape so snprintf is fine,
 // didn't feel like pulling in ArduinoJson just for this
 
-inline bool comasConnectWifi(uint32_t timeoutMs = 150) {
+inline bool comasConnectWifi(uint32_t timeoutMs = 10000) {
   WiFi.mode(WIFI_STA);
   WiFi.begin(COMAS_WIFI_SSID, COMAS_WIFI_PASS);
   const uint32_t start = millis();
@@ -60,6 +60,8 @@ inline bool comasPostTelemetry(int coRaw, int methaneRaw, int pm25,
                       String(COMAS_SERVER) + "/api/telemetry")) {
     return false;
   }
+  http.setConnectTimeout(2000);
+  http.setTimeout(2000);
   http.addHeader("Content-Type", "application/json");
   const int code = http.POST(body);
   http.end();
@@ -84,6 +86,8 @@ inline int comasPollRemoteAlert() {
                       String(COMAS_SERVER) + "/api/active_alert")) {
     return 0;
   }
+  http.setConnectTimeout(2000);
+  http.setTimeout(2000);
   const int code = http.GET();
   int alertNode = 0;
   if (code == 200) {

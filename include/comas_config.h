@@ -8,8 +8,8 @@
 constexpr int COMAS_NODE_ID = 1;
 
 // wifi creds
-constexpr const char* COMAS_WIFI_SSID = "Steve Jobs";
-constexpr const char* COMAS_WIFI_PASS = "passthepassword";
+constexpr const char* COMAS_WIFI_SSID = "YOUR_WIFI_SSID";
+constexpr const char* COMAS_WIFI_PASS = "YOUR_WIFI_PASSWORD";
 constexpr const int WIFI_MAX_ATTEMPTS = 3;
 
 // server base url, no trailing slash. local IP while testing,
