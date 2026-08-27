@@ -230,7 +230,7 @@ void loop() {
         Serial.print(" PM10=");
         Serial.println(pms.pm10);
 
-        String alert_text = "";
+        String alert_text = " ";
         if (alert_status & (1 << 0)) {
             alert_text = "CO DETECTED!";
         } else if (alert_status & (1 << 1)) {
@@ -242,9 +242,9 @@ void loop() {
         }
 
         cs147DisplayLines(
-            "Status: " + String(alert_text.length() > 0 ? "DANGER" : (comasWifiOk() ? "Operational" : "Local Only")),
+            "Status: " + String(alert_text != " " ? "DANGER" : (comasWifiOk() ? "Operational" : "Local Only")),
             alert_text,
-            "\nMethane: " + String(methane_ppm) + " ppm\nCO: " + String(co_ppm) + "ppm",
+            "Methane: " + String(methane_ppm) + " ppm\nCO: " + String(co_ppm) + "ppm",
             "Particulates(ug/m^3)\nLarge: " + String(pms.pm10) + "\nFine: " + String(pms.pm2_5) + "\nUltrafine: " + String(pms.pm1_0)
         );
     }
@@ -279,3 +279,4 @@ void loop() {
         );
     }
 }
+

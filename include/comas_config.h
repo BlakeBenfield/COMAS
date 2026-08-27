@@ -5,7 +5,7 @@
 // pretty much everything you'd want to tweak is in this file
 
 // change this to 2 before flashing the second board!
-constexpr int COMAS_NODE_ID = 1;
+constexpr int COMAS_NODE_ID = 2;
 
 // wifi creds
 constexpr const char* COMAS_WIFI_SSID = "YOUR_WIFI_SSID";
@@ -14,12 +14,12 @@ constexpr const int WIFI_MAX_ATTEMPTS = 3;
 
 // server base url, no trailing slash. local IP while testing,
 // swap in the EC2/azure ip once it's deployed
-constexpr const char* COMAS_SERVER = "http://172.20.10.2:5000";
+constexpr const char* COMAS_SERVER = "https://comas-8tcc.onrender.com/";
 
 // timing
 constexpr uint32_t SAMPLE_INTERVAL_MS      = 2000;  // sample + upload every 15s
 constexpr uint32_t ALERT_POLL_INTERVAL_MS  = 10000;  // check for alerts from the other node
-constexpr uint32_t SENSOR_WARMUP_MS        = 30000;  // MQ heaters + PMS need time to wake up
+constexpr uint32_t SENSOR_WARMUP_MS        = 2000;  // MQ heaters + PMS need time to wake up
 constexpr uint32_t BEEP_INTERVAL           = 1000;
 constexpr uint32_t TELEMETRY_INTERVAL      = 20000;
 constexpr uint32_t PRINT_INTERVAL          = 3000;
